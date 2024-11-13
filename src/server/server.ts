@@ -9,8 +9,6 @@ import { SocketActions } from '../constants/socket';
 
 config();
 
-const usersRooms: Record<string, string> = {};
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
@@ -21,110 +19,94 @@ const io = new Server(server, {
   cors: { origin: process.env.ALLOWED_ORIGIN },
   serveClient: false,
 });
+const getUsersInRoom = (roomId: string) => {
+  return Array.from(io.sockets.adapter.rooms.get(roomId) ?? []);
+};
 
 io.on('connection', (socket) => {
   socket.on(SocketActions.CREATE_ROOM, ({ roomId }) => {
-    if (usersRooms[roomId]) {
+    const users = getUsersInRoom(roomId);
+    if (users.length > 0) {
       socket.emit(SocketActions.EXIST_ROOM);
       return;
     }
-    usersRooms[roomId] = socket.id;
     socket.emit(SocketActions.CONNECT_ROOM, roomId);
   });
 
   socket.on(SocketActions.ENTER_ROOM, ({ roomId }) => {
-    console.log('ENTER_ROOM');
-    if (!Object.keys(usersRooms).includes(roomId)) {
+    const users = getUsersInRoom(roomId);
+    if (users.length === 0) {
       socket.emit(SocketActions.NOT_FOUND_ROOM);
-    } else if (
-      Array.from(io.sockets.adapter.rooms.get(usersRooms[roomId]) ?? [])
-        .length === 2
-    ) {
-      socket.emit(SocketActions.FULL_ROOM);
-    } else {
-      socket.emit(SocketActions.CONNECT_ROOM, roomId);
+      return;
     }
+    if (users.length === 2) {
+      socket.emit(SocketActions.FULL_ROOM);
+      return;
+    }
+    socket.emit(SocketActions.CONNECT_ROOM, roomId);
   });
 
   socket.on(SocketActions.JOIN_ROOM, ({ roomId }) => {
-    console.log('roomId ', roomId);
-    console.log('io.sockets.adapter.rooms ', io.sockets.adapter.rooms);
-    console.log('usersRooms ', usersRooms);
-
-    console.log('socket.rooms ', socket.rooms);
-
-    if (socket.rooms.has(usersRooms[roomId])) {
+    console.log(socket.rooms);
+    if (socket.rooms.has(roomId)) {
       return;
     }
 
-    const users = Array.from(
-      io.sockets.adapter.rooms.get(usersRooms[roomId]) ?? []
-    );
-    console.log('users', users);
+    const users = getUsersInRoom(roomId);
 
-    users.forEach((userId) => {
-      io.to(userId).emit(SocketActions.ADD_PEER, {
-        peerId: socket.id,
+    const firstUserId = users[0];
+
+    if (firstUserId) {
+      io.to(firstUserId).emit(SocketActions.ADD_PEER, {
+        remotePeerId: socket.id,
         createOffer: false,
       });
       socket.emit(SocketActions.ADD_PEER, {
-        peerId: userId,
+        remotePeerId: firstUserId,
         createOffer: true,
       });
-    });
+    }
 
-    socket.join(usersRooms[roomId]);
-    console.log(
-      'after join ',
-      Array.from(io.sockets.adapter.rooms.get(usersRooms[roomId]) ?? [])
-    );
+    socket.join(roomId);
   });
 
-  socket.on(SocketActions.SEND_SDP, ({ peerId, sessionDescription }) => {
-    io.to(peerId).emit(SocketActions.SET_DESCRIPTION, {
-      peerId: socket.id,
-      sessionDescription,
+  socket.on(SocketActions.SEND_SDP, ({ remotePeerId, sessionDescription }) => {
+    io.to(remotePeerId).emit(SocketActions.SET_DESCRIPTION, {
+      remotePeerId: socket.id,
+      remoteSessionDescription: sessionDescription,
     });
   });
 
-  socket.on(SocketActions.SEND_ICE, ({ peerId, iceCandidate }) => {
-    io.to(peerId).emit(SocketActions.SET_ICE, {
-      peerId: socket.id,
+  socket.on(SocketActions.SEND_ICE, ({ remotePeerId, iceCandidate }) => {
+    io.to(remotePeerId).emit(SocketActions.SET_ICE, {
       iceCandidate,
     });
   });
 
   function leaveRoom({ roomId }: { roomId: string }) {
-    const users = Array.from(
-      io.sockets.adapter.rooms.get(usersRooms[roomId]) ?? []
-    );
+    socket.leave(roomId);
 
-    users.forEach((userId) => {
-      io.to(userId).emit(SocketActions.REMOVE_PEER, {
-        peerId: socket.id,
-      });
+    const users = getUsersInRoom(roomId);
 
-      socket.emit(SocketActions.REMOVE_PEER, {
-        peerId: userId,
-      });
-    });
-    socket.leave(usersRooms[roomId]);
-    if (
-      Array.from(io.sockets.adapter.rooms.get(usersRooms[roomId]) ?? [])
-        .length === 0
-    ) {
-      delete usersRooms[roomId];
+    const leftUser = users[0];
+    if (leftUser) {
+      io.to(leftUser).emit(SocketActions.REMOVE_PEER);
+
+      // socket.emit(SocketActions.REMOVE_PEER, {
+      //   peerId: leftUser,
+      // });
     }
-
-    console.log(usersRooms);
   }
 
   socket.on(SocketActions.LEAVE_ROOM, leaveRoom);
-  // socket.on('disconnecting', (reason) => {
-  //   if(reason){
-  //     leaveRoom();
-  //   }
-  // });
+  socket.on('disconnecting', () => {
+    const rooms = socket.rooms;
+    rooms.forEach((roomId) => {
+      if (roomId !== socket.id) {
+        leaveRoom({ roomId });
+      }
+    });
+  });
 });
 
 const port = process.env.PORT || 4000;

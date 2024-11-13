@@ -1,24 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useParams } from 'react-router-dom';
+import {
+  Button,
+  ClipboardButton,
+  Icon,
+  Label,
+  TextInput,
+} from '@gravity-ui/uikit';
+import { ArrowRightFromSquare } from '@gravity-ui/icons';
+
 import socket from '../../socket';
 import { SocketActions } from '../../constants/socket';
+
+import styles from './Room.module.css';
 
 const CONFIG = { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] };
 
 export const Room = () => {
-  const { id } = useParams();
+  const { id: roomId } = useParams();
 
   const navigate = useNavigate();
 
-  const [localUser, setLocalUser] = useState<string>('');
-  //   const [remoteUser, setRemoteUser] = useState<string>('');
+  const [hasLocalUser, setLocalUser] = useState(false);
+  const [hasRemoteUser, setRemoteUser] = useState(false);
 
-  const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
   const localMediaStream = useRef<MediaStream>();
 
   const localMediaRef = useRef<HTMLVideoElement>(null);
   const remoteMediaRef = useRef<HTMLVideoElement>(null);
+
+  const peerConnection = useRef<RTCPeerConnection>();
 
   useEffect(() => {
     async function startCapture() {
@@ -30,62 +42,55 @@ export const Room = () => {
         },
       });
       if (localMediaStream.current) {
-        setLocalUser('LOCAL');
+        setLocalUser(true);
       } else {
         console.log('you blocked camera');
       }
     }
     startCapture().then(() => {
-      console.log('join to WS');
-      socket.emit(SocketActions.JOIN_ROOM, { roomId: id });
+      socket.emit(SocketActions.JOIN_ROOM, { roomId });
     });
 
     return () => {
       localMediaStream.current?.getTracks().forEach((track) => track.stop());
-      console.log('LEAVE ROOM');
-      socket.emit(SocketActions.LEAVE_ROOM, { roomId: id });
+      socket.emit(SocketActions.LEAVE_ROOM, { roomId });
     };
-  }, [id]);
+  }, [roomId]);
 
   useEffect(() => {
     const localVideoElement = localMediaRef.current;
     if (localVideoElement && localMediaStream.current) {
       localVideoElement.srcObject = localMediaStream.current;
-    } else {
-      console.log('not found localVideoElement');
     }
-  }, [localUser]);
+  }, [hasLocalUser]);
 
   useEffect(() => {
     async function handleNewPeer({
-      peerId,
+      remotePeerId,
       createOffer,
     }: {
-      peerId: string;
+      remotePeerId: string;
       createOffer: boolean;
     }) {
-      if (peerId in peerConnections.current) {
+      if (peerConnection.current) {
         return console.warn('Already connected to peer');
       }
-      console.log('add peer', peerId);
-      peerConnections.current[peerId] = new RTCPeerConnection(CONFIG);
+      peerConnection.current = new RTCPeerConnection(CONFIG);
 
-      peerConnections.current[peerId].onicecandidate = (event) => {
+      peerConnection.current.onicecandidate = (event) => {
         if (event.candidate) {
           socket.emit(SocketActions.SEND_ICE, {
-            peerId,
+            remotePeerId,
             iceCandidate: event.candidate,
           });
         }
       };
       let trackNumber = 0;
-      peerConnections.current[peerId].ontrack = ({
-        streams: [remoteStream],
-      }) => {
+      peerConnection.current.ontrack = ({ streams: [remoteStream] }) => {
         trackNumber++;
         if (trackNumber === 2) {
           if (remoteMediaRef.current) {
-            console.log('remoteStream', remoteStream);
+            setRemoteUser(true);
             remoteMediaRef.current.srcObject = remoteStream;
           }
         }
@@ -93,21 +98,18 @@ export const Room = () => {
 
       if (localMediaStream.current) {
         localMediaStream.current.getTracks().forEach((track) => {
-          if (localMediaStream.current) {
-            peerConnections.current[peerId].addTrack(
-              track,
-              localMediaStream.current
-            );
+          if (localMediaStream.current && peerConnection.current) {
+            peerConnection.current.addTrack(track, localMediaStream.current);
           }
         });
       }
 
       if (createOffer) {
-        const offer = await peerConnections.current[peerId].createOffer();
-        await peerConnections.current[peerId].setLocalDescription(offer);
+        const offer = await peerConnection.current.createOffer();
+        await peerConnection.current.setLocalDescription(offer);
 
         socket.emit(SocketActions.SEND_SDP, {
-          peerId,
+          remotePeerId,
           sessionDescription: offer,
         });
       }
@@ -121,28 +123,26 @@ export const Room = () => {
 
   useEffect(() => {
     async function setRemoteDescription({
-      peerId,
-      sessionDescription,
+      remotePeerId,
+      remoteSessionDescription,
     }: {
-      peerId: string;
-      sessionDescription: RTCSessionDescriptionInit;
+      remotePeerId: string;
+      remoteSessionDescription: RTCSessionDescriptionInit;
     }) {
-      console.log('setRemoteDescription peer', peerId);
-      await peerConnections.current[peerId].setRemoteDescription(
-        new RTCSessionDescription(sessionDescription)
+      if (!peerConnection.current) {
+        return;
+      }
+      await peerConnection.current.setRemoteDescription(
+        new RTCSessionDescription(remoteSessionDescription)
       );
 
-      if (sessionDescription.type === 'offer') {
-        const answer = await peerConnections.current[peerId].createAnswer();
+      if (remoteSessionDescription.type === 'offer') {
+        const answer = await peerConnection.current.createAnswer();
 
-        console.log(
-          'setRemoteDescription peerConnections',
-          peerConnections.current
-        );
-        await peerConnections.current[peerId].setLocalDescription(answer);
+        await peerConnection.current.setLocalDescription(answer);
 
         socket.emit(SocketActions.SEND_SDP, {
-          peerId,
+          remotePeerId,
           sessionDescription: answer,
         });
       }
@@ -155,12 +155,12 @@ export const Room = () => {
   }, []);
 
   useEffect(() => {
-    socket.on(SocketActions.SET_ICE, ({ peerId, iceCandidate }) => {
-      console.log('ice peer', peerId);
-      console.log('ice candidate peerConnections', peerConnections.current);
-      peerConnections.current[peerId].addIceCandidate(
-        new RTCIceCandidate(iceCandidate)
-      );
+    socket.on(SocketActions.SET_ICE, ({ iceCandidate }) => {
+      if (peerConnection.current) {
+        peerConnection.current.addIceCandidate(
+          new RTCIceCandidate(iceCandidate)
+        );
+      }
     });
 
     return () => {
@@ -169,13 +169,14 @@ export const Room = () => {
   }, []);
 
   useEffect(() => {
-    const handleRemovePeer = ({ peerId }: { peerId: string }) => {
-      console.log('someone leave ', peerId);
-      if (peerConnections.current[peerId]) {
-        peerConnections.current[peerId].close();
+    const handleRemovePeer = () => {
+      setRemoteUser(false);
+      if (!peerConnection.current) {
+        return;
       }
+      peerConnection.current.close();
 
-      delete peerConnections.current[peerId];
+      peerConnection.current = undefined;
       if (remoteMediaRef.current) {
         remoteMediaRef.current.srcObject = null;
       }
@@ -191,15 +192,54 @@ export const Room = () => {
     navigate(`/`, { replace: false });
   };
 
+  if (!roomId) {
+    return;
+  }
+
   return (
-    <div>
-      <button onClick={exit}>Выход</button>
-      <div>
-        <video ref={localMediaRef} autoPlay playsInline muted={true} />
+    <div className={styles.wrapper}>
+      <div className={styles.controlsWrapper}>
+        <div className={styles.videosWrapper}>
+          <video
+            className={`${styles.localVideo} ${
+              hasRemoteUser ? styles.halfHeight : styles.fullHeight
+            }`}
+            ref={localMediaRef}
+            autoPlay
+            playsInline
+            muted={true}
+          />
+          <video
+            className={`${styles.remoteVideo} ${
+              hasRemoteUser ? styles.show : styles.hide
+            }`}
+            ref={remoteMediaRef}
+            autoPlay
+            playsInline
+          />
+        </div>
+        <Button
+          size="xl"
+          className={styles.exitButton}
+          onClick={exit}
+          title={'Выход'}
+          view="action"
+        >
+          <Icon data={ArrowRightFromSquare} size={18} />
+        </Button>
       </div>
-      <div>
-        <video ref={remoteMediaRef} autoPlay playsInline />
-      </div>
+      <aside className={styles.chatWrapper}>
+        <TextInput
+          size="l"
+          value={roomId}
+          readOnly
+          endContent={
+            <ClipboardButton text={roomId} size="m" hasTooltip={false} />
+          }
+          startContent={<Label size="m">Идентификатор комнаты:</Label>}
+          className={styles.roomNumberInput}
+        />
+      </aside>
     </div>
   );
 };

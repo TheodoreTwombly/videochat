@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
+    "@gravity-ui/icons": "^2.11.0",
     "@gravity-ui/uikit": "^6.35.1",
     "@types/express": "^5.0.0",
     "@types/node": "^22.9.0",

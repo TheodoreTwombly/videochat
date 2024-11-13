@@ -14,3 +14,7 @@ export const enum SocketActions {
   REMOVE_PEER = 'REMOVE_PEER',
   LEAVE_ROOM = 'LEAVE_ROOM',
 }
+
+export const CONFIG = {
+  iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
+};

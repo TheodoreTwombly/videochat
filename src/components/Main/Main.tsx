@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import socket from '../../socket';
 import { useNavigate } from 'react-router-dom';
 import { SocketActions } from '../../constants/socket';
+import { TextInput, Button } from '@gravity-ui/uikit';
 
-import './Main.css';
+import styles from './Main.module.css';
 
 export const Main = () => {
   const navigate = useNavigate();
@@ -15,24 +16,26 @@ export const Main = () => {
     socket.on(SocketActions.CONNECT_ROOM, (roomId) => {
       navigate(`/room/${roomId}`, { replace: true });
     });
+    return () => {
+      socket.off(SocketActions.CONNECT_ROOM);
+    };
   }, [navigate]);
 
   useEffect(() => {
     socket.on(SocketActions.EXIST_ROOM, () => {
       setError('Такая комната уже существует');
     });
-  }, []);
-
-  useEffect(() => {
     socket.on(SocketActions.NOT_FOUND_ROOM, () => {
       setError('Комната не найдена');
     });
-  }, []);
-
-  useEffect(() => {
     socket.on(SocketActions.FULL_ROOM, () => {
-      setError('Вы не можете присоедениться т.к. комната заполнена');
+      setError('Вы не можете присоедениться, т.к. комната заполнена');
     });
+    return () => {
+      socket.off(SocketActions.EXIST_ROOM);
+      socket.off(SocketActions.NOT_FOUND_ROOM);
+      socket.off(SocketActions.FULL_ROOM);
+    };
   }, []);
 
   const createRoom = () => {
@@ -56,17 +59,22 @@ export const Main = () => {
   };
 
   return (
-    <div className="wrapper">
-      <input
-        value={roomId}
+    <div className={styles.wrapper}>
+      <TextInput
+        size="xl"
+        placeholder="Введите идентификатор комнаты"
         onChange={(e) => setRoomId(e.target.value)}
-        placeholder="Type room id"
+        errorMessage={error}
+        validationState={error ? 'invalid' : undefined}
+        onKeyDown={() => setError('')}
       />
-      {error && <span>{error}</span>}
-
-      <div className="controls">
-        <button onClick={createRoom}>Create room</button>
-        <button onClick={enterRoom}>Join room</button>
+      <div className={styles.controls}>
+        <Button view="action" size="l" onClick={createRoom}>
+          Создать
+        </Button>
+        <Button view="normal" size="l" onClick={enterRoom}>
+          Войти
+        </Button>
       </div>
     </div>
   );
