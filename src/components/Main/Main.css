@@ -1,0 +1,10 @@
+.wrapper {
+    height: 100vh;
+    overflow-y:inherit;
+    display: flex;
+    
+ /* Change values to experiment*/
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+}

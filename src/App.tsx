@@ -1,14 +1,17 @@
-import socket from './socket';
 import './App.css';
-import { useEffect } from 'react';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { Main } from './components/Main/Main';
+import { Room } from './components/Room/Room';
 
 function App() {
-  useEffect(() => {
-    socket.on('connect', () => {
-      console.log(socket.id);
-    });
-  }, []);
-  return <div>Main</div>;
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Main />} />
+        <Route path="/room/:id" element={<Room />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
 
 export default App;
