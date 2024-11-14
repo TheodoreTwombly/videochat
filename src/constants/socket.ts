@@ -13,6 +13,7 @@ export const enum SocketActions {
   SET_ICE = 'SET_ICE', //'ICE_CANDIDATE'
   REMOVE_PEER = 'REMOVE_PEER',
   LEAVE_ROOM = 'LEAVE_ROOM',
+  SEND_MESSAGE = 'SEND_MESSAGE',
 }
 
 export const CONFIG = {

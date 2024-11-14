@@ -47,7 +47,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on(SocketActions.JOIN_ROOM, ({ roomId }) => {
-    console.log(socket.rooms);
     if (socket.rooms.has(roomId)) {
       return;
     }
@@ -91,10 +90,6 @@ io.on('connection', (socket) => {
     const leftUser = users[0];
     if (leftUser) {
       io.to(leftUser).emit(SocketActions.REMOVE_PEER);
-
-      // socket.emit(SocketActions.REMOVE_PEER, {
-      //   peerId: leftUser,
-      // });
     }
   }
 
@@ -104,6 +99,15 @@ io.on('connection', (socket) => {
     rooms.forEach((roomId) => {
       if (roomId !== socket.id) {
         leaveRoom({ roomId });
+      }
+    });
+  });
+
+  socket.on(SocketActions.SEND_MESSAGE, ({ roomId, isLocal, message }) => {
+    const users = getUsersInRoom(roomId);
+    users.forEach((user) => {
+      if (user !== socket.id) {
+        io.to(user).emit(SocketActions.SEND_MESSAGE, { isLocal, message });
       }
     });
   });

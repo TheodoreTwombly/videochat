@@ -14,6 +14,7 @@ import socket from '../../socket';
 import { SocketActions } from '../../constants/socket';
 
 import styles from './Room.module.css';
+import { Chat } from '../Chat/Chat';
 
 const CONFIG = { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] };
 
@@ -239,6 +240,7 @@ export const Room = () => {
           startContent={<Label size="m">Идентификатор комнаты:</Label>}
           className={styles.roomNumberInput}
         />
+        <Chat hasRemoteUser={hasRemoteUser} roomId={roomId} />
       </aside>
     </div>
   );

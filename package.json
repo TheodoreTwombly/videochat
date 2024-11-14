@@ -4,11 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev-client": "vite",
+    "dev-server": "npx tsx --watch ./src/server/server.ts",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "dev-server": "npx tsx --watch ./src/server/server.ts"
+    "preview": "vite preview"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
